@@ -45,6 +45,28 @@ class VideoFrame {
   final Uint8List byteArray;
 }
 
+class ContentMarkInOutsFrame {
+  int? markIn;
+  int? markOut;
+  int? id;
+  String? createdUserFullName;
+  String? note;
+
+  ContentMarkInOutsFrame({this.markIn,
+    this.markOut,
+    this.id,
+    this.createdUserFullName,
+    this.note});
+
+  ContentMarkInOutsFrame.fromJson(Map<String, dynamic> json) {
+    markIn = json['markIn'];
+    markOut = json['markOut'];
+    id = json['id'];
+    createdUserFullName = json['createdUserFullName'];
+    note = json['note'];
+  }
+}
+
 /// {@template video}
 /// Widget for showing [Video] inside the [Widget] tree.
 /// Creation of [Player] instance is necessary as a controller, for this [Widget] to show [Video] output.
@@ -101,6 +123,8 @@ class Video extends StatefulWidget {
     this.progressBarTextStyle = const TextStyle(),
     this.filterQuality = FilterQuality.low,
     this.fillColor = Colors.black,
+    this.isAudio = false,
+    this.contentMarks,
   })  : player = player ?? players[playerId]! as Player,
         super(key: key);
 
@@ -172,6 +196,10 @@ class Video extends StatefulWidget {
   /// Fill color.
   final Color fillColor;
 
+  final bool isAudio;
+
+  final List<ContentMarkInOutsFrame>? contentMarks;
+
   @override
   VideoStateBase createState() => VideoStateTexture();
 }
@@ -196,22 +224,32 @@ abstract class VideoStateBase extends State<Video>
       height: widget.height ?? double.infinity,
       color: widget.fillColor,
       child: widget.showControls
-          ? Control(
-              key: controlKey,
-              player: widget.player,
-              progressBarThumbRadius: widget.progressBarThumbRadius,
-              progressBarThumbGlowRadius: widget.progressBarThumbGlowRadius,
-              progressBarActiveColor: widget.progressBarActiveColor,
-              progressBarInactiveColor: widget.progressBarInactiveColor,
-              progressBarThumbColor: widget.progressBarThumbColor,
-              progressBarThumbGlowColor: widget.progressBarThumbGlowColor,
-              volumeActiveColor: widget.volumeActiveColor,
-              volumeInactiveColor: widget.volumeInactiveColor,
-              volumeBackgroundColor: widget.volumeBackgroundColor,
-              volumeThumbColor: widget.volumeThumbColor,
-              showTimeLeft: widget.showTimeLeft,
-              progressBarTextStyle: widget.progressBarTextStyle,
-              child: present(),
+          ? Stack(
+              children: [
+                if (widget.isAudio)
+                  Image.asset(
+                    'assets/images/image_audio_background.png',
+                    fit: BoxFit.cover,
+                  ),
+                Control(
+                  key: controlKey,
+                  player: widget.player,
+                  progressBarThumbRadius: widget.progressBarThumbRadius,
+                  progressBarThumbGlowRadius: widget.progressBarThumbGlowRadius,
+                  progressBarActiveColor: widget.progressBarActiveColor,
+                  progressBarInactiveColor: widget.progressBarInactiveColor,
+                  progressBarThumbColor: widget.progressBarThumbColor,
+                  progressBarThumbGlowColor: widget.progressBarThumbGlowColor,
+                  volumeActiveColor: widget.volumeActiveColor,
+                  volumeInactiveColor: widget.volumeInactiveColor,
+                  volumeBackgroundColor: widget.volumeBackgroundColor,
+                  volumeThumbColor: widget.volumeThumbColor,
+                  showTimeLeft: widget.showTimeLeft,
+                  progressBarTextStyle: widget.progressBarTextStyle,
+                  contentMarks: widget.contentMarks,
+                  child: present(),
+                ),
+              ],
             )
           : present(),
     );

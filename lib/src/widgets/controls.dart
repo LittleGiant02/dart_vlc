@@ -18,11 +18,13 @@
 
 // ignore_for_file: implementation_imports
 import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:audio_video_progress_bar/audio_video_progress_bar.dart';
+
+import 'package:dart_vlc/src/widgets/video.dart';
+import 'package:dart_vlc/uiux/utils.dart';
 import 'package:dart_vlc_ffi/src/device.dart';
 import 'package:dart_vlc_ffi/src/player.dart';
 import 'package:dart_vlc_ffi/src/player_state/player_state.dart';
+import 'package:flutter/material.dart';
 
 class Control extends StatefulWidget {
   Control({
@@ -41,6 +43,7 @@ class Control extends StatefulWidget {
     required this.volumeInactiveColor,
     required this.volumeBackgroundColor,
     required this.volumeThumbColor,
+    required this.contentMarks,
   }) : super(key: key);
 
   final Widget child;
@@ -57,6 +60,7 @@ class Control extends StatefulWidget {
   final Color? volumeInactiveColor;
   final Color? volumeBackgroundColor;
   final Color? volumeThumbColor;
+  final List<ContentMarkInOutsFrame>? contentMarks;
 
   @override
   ControlState createState() => ControlState();
@@ -70,15 +74,18 @@ class ControlState extends State<Control> with SingleTickerProviderStateMixin {
   late AnimationController playPauseController;
 
   Player get player => widget.player;
+  double maxMarkOut = 0;
 
   @override
   void initState() {
     super.initState();
     playPauseController =
         AnimationController(vsync: this, duration: Duration(milliseconds: 400));
-    playPauseStream = player.playbackStream
-        .listen((event) => setPlaybackMode(event.isPlaying));
+    playPauseStream = player.playbackStream.listen((event) {
+      setPlaybackMode(event.isPlaying);
+    });
     if (player.playback.isPlaying) playPauseController.forward();
+    getMaxMarkOut();
   }
 
   @override
@@ -97,8 +104,95 @@ class ControlState extends State<Control> with SingleTickerProviderStateMixin {
     setState(() {});
   }
 
+  void getMaxMarkOut() {
+    if (widget.contentMarks == null || widget.contentMarks!.isEmpty) {
+      maxMarkOut = 0;
+      return;
+    }
+    final max = widget.contentMarks?.reduce(
+        (pre, next) => (pre.markOut ?? 0) > (next.markOut ?? 0) ? pre : next);
+    maxMarkOut = max?.markOut?.toDouble() ?? 0.0;
+  }
+
+  List<Widget> convertContentMark(
+      int? position, int? duration, double sliderWidth) {
+    final newContentMarks = <Widget>[];
+    if (duration != null &&
+        duration != 0 &&
+        position != null &&
+        position != 0 &&
+        widget.contentMarks?.isNotEmpty == true) {
+      for (int i = 0; i < widget.contentMarks!.length; i++) {
+        final mark = widget.contentMarks![i];
+        if (mark.markIn != null && mark.markOut != null) {
+          final markIn = sliderWidth * (mark.markIn! / duration);
+          final markOut = sliderWidth * (mark.markOut! / duration);
+
+          bool isLess = position < mark.markIn!;
+          bool isThan = position > mark.markOut!;
+          bool isInside = !isLess && !isThan;
+          final markPosition = sliderWidth * (position / duration);
+
+          BoxDecoration boxDecoration(Color color) => BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(markIn == 0 ? 8 : 0),
+                  bottomLeft: Radius.circular(markIn == 0 ? 8 : 0),
+                  topRight: Radius.circular(markOut == mark.markOut ? 8 : 0),
+                  bottomRight: Radius.circular(markOut == mark.markOut ? 8 : 0),
+                ),
+              );
+          final markInWidget = Positioned(
+            left: markIn,
+            child: Tooltip(
+              message: mark.note,
+              child: Row(
+                children: [
+                  if (isInside)
+                    Row(
+                      children: [
+                        Container(
+                          height: 8.5,
+                          width: markPosition - markIn,
+                          decoration: boxDecoration(Color(0xFFF94839)),
+                        ),
+                        Container(
+                          height: 6,
+                          width: markOut - markPosition,
+                          decoration:
+                              boxDecoration(Color(0xFFF94839).withOpacity(0.7)),
+                        ),
+                      ],
+                    )
+                  else if (isLess)
+                    Container(
+                      height: 6,
+                      width: markOut - markIn,
+                      decoration:
+                          boxDecoration(Color(0xFFF94839).withOpacity(0.7)),
+                    )
+                  else
+                    Container(
+                      height: 8.5,
+                      width: markOut - markIn,
+                      decoration: boxDecoration(Color(0xFFF94839)),
+                    )
+                ],
+              ),
+            ),
+          );
+          newContentMarks.add(markInWidget);
+        }
+      }
+    }
+    return newContentMarks;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final sliderWidth =
+        screenSize.width * 0.8 - (screenSize.width <= 1200 ? 250 : 350) - 40;
     return GestureDetector(
       onTap: () {
         if (player.playback.isPlaying) {
@@ -159,35 +253,122 @@ class ControlState extends State<Control> with SingleTickerProviderStateMixin {
                                 durationState?.position ?? Duration.zero;
                             final total =
                                 durationState?.duration ?? Duration.zero;
-                            return Theme(
-                              data: ThemeData.dark(),
-                              child: ProgressBar(
-                                progress: progress,
-                                total: total,
-                                barHeight: 3,
-                                progressBarColor: widget.progressBarActiveColor,
-                                thumbColor: widget.progressBarThumbColor,
-                                baseBarColor: widget.progressBarInactiveColor,
-                                thumbGlowColor:
-                                    widget.progressBarThumbGlowColor,
-                                thumbRadius:
-                                    widget.progressBarThumbRadius ?? 10.0,
-                                thumbGlowRadius:
-                                    widget.progressBarThumbGlowRadius ?? 30.0,
-                                timeLabelLocation: TimeLabelLocation.sides,
-                                timeLabelType: widget.showTimeLeft!
-                                    ? TimeLabelType.remainingTime
-                                    : TimeLabelType.totalTime,
-                                timeLabelTextStyle: widget.progressBarTextStyle,
-                                onSeek: (duration) {
-                                  player.seek(duration);
-                                },
-                              ),
+                            final listMark = convertContentMark(
+                                progress.inSeconds,
+                                total.inSeconds,
+                                sliderWidth);
+                            return Column(
+                              children: [
+                                Stack(
+                                  alignment: Alignment.centerLeft,
+                                  children: [
+                                    SizedBox(
+                                      height: 24,
+                                      child: SliderTheme(
+                                        data: SliderThemeData(
+                                          trackHeight: 6.5,
+                                          trackShape: CustomTrackShape(),
+                                          activeTrackColor: Color(0xFFF7F7F7)
+                                              .withOpacity(0.9),
+                                          inactiveTrackColor: Color(0xFFF0F0F0)
+                                              .withOpacity(0.2),
+                                          thumbColor: Color(0xFFF7F7F7),
+                                          thumbShape:
+                                              SliderComponentShape.noThumb,
+                                          overlayShape:
+                                              SliderComponentShape.noOverlay,
+                                        ),
+                                        child: Slider(
+                                          value: progress.inMilliseconds
+                                              .toDouble(),
+                                          min: 0.0,
+                                          max: total.inMilliseconds.toDouble(),
+                                          onChanged: (value) async {
+                                            final duration = Duration(
+                                                milliseconds: value.toInt());
+                                            player.seek(duration);
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                    if (listMark.isNotEmpty)
+                                      IgnorePointer(
+                                        // ignoring: true,
+                                        ignoringSemantics: true,
+                                        child: Container(
+                                          width: sliderWidth,
+                                          height: 8.0,
+                                          child: Stack(
+                                            alignment: Alignment.centerLeft,
+                                            children: listMark,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      convertDuration(progress.inSeconds),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      convertDuration(total.inSeconds),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             );
                           },
                         ),
                       ),
                     ),
+                    // Positioned(
+                    //   left: 0,
+                    //   right: 0,
+                    //   bottom: 0,
+                    //   child: Padding(
+                    //     padding:
+                    //         EdgeInsets.only(bottom: 60, right: 20, left: 20),
+                    //     child: StreamBuilder<PositionState>(
+                    //       stream: player.positionStream,
+                    //       builder: (BuildContext context, AsyncSnapshot<PositionState> snapshot) {
+                    //         final durationState = snapshot.data;
+                    //         final progress = durationState?.position ?? Duration.zero;
+                    //         final total = durationState?.duration ?? Duration.zero;
+                    //         return Theme(
+                    //           data: ThemeData.dark(),
+                    //           child: ProgressBar(
+                    //             progress: progress,
+                    //             total: total,
+                    //             barHeight: 3,
+                    //             progressBarColor: widget.progressBarActiveColor,
+                    //             thumbColor: widget.progressBarThumbColor,
+                    //             baseBarColor: widget.progressBarInactiveColor,
+                    //             thumbGlowColor: widget.progressBarThumbGlowColor,
+                    //             thumbRadius: widget.progressBarThumbRadius ?? 10.0,
+                    //             thumbGlowRadius: widget.progressBarThumbGlowRadius ?? 30.0,
+                    //             timeLabelLocation: TimeLabelLocation.sides,
+                    //             timeLabelType: widget.showTimeLeft!
+                    //                 ? TimeLabelType.remainingTime
+                    //                 : TimeLabelType.totalTime,
+                    //             timeLabelTextStyle: widget.progressBarTextStyle,
+                    //             onSeek: (duration) {
+                    //               player.seek(duration);
+                    //             },
+                    //           ),
+                    //         );
+                    //       },
+                    //     ),
+                    //   ),
+                    // ),
                     StreamBuilder<CurrentState>(
                       stream: widget.player.currentStream,
                       builder: (context, snapshot) {
@@ -280,13 +461,13 @@ class ControlState extends State<Control> with SingleTickerProviderStateMixin {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          VolumeControl(
-                            player: player,
-                            thumbColor: widget.volumeThumbColor,
-                            inactiveColor: widget.volumeInactiveColor,
-                            activeColor: widget.volumeActiveColor,
-                            backgroundColor: widget.volumeBackgroundColor,
-                          ),
+                          // VolumeControl(
+                          //   player: player,
+                          //   thumbColor: widget.volumeThumbColor,
+                          //   inactiveColor: widget.volumeInactiveColor,
+                          //   activeColor: widget.volumeActiveColor,
+                          //   backgroundColor: widget.volumeBackgroundColor,
+                          // ),
                           PopupMenuButton(
                             iconSize: 24,
                             icon: Icon(Icons.speaker, color: Colors.white),
